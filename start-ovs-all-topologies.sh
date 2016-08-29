@@ -129,84 +129,54 @@
 #              through the DUT, and out device A (steps 8 through 1)
 #
 
+# Read the test configuration parameters
+source test_params.cfg
 
-#prefix="/usr/local" # used with locally built src
-prefix=""  # used with RPMs
-
-vhost="user" # can be user or cuse
-eth_model="82599ES" # use XL710 for 40Gb
-
-export DB_SOCK="$prefix/var/run/openvswitch/db.sock"
-network_topology="{(PP)}" 
-#network_topology="{(PV),(VP)}"
-#network_topology="{(PV),(VV),(VP)}"
-num_queues_per_port=1
-#cpumask=55
-#cpumask=154
-#cpumask=AA  # logical cpus 1, 3, 5, and 7 the first 4 cores from Node 1
-#cpumask=F
-cpumask=A
-# {(PV),(VP)} = 4 ports.  Then multiply by number of queues per port to get optimum PMD thread count
-#
-# 3 queues per port.  4 
-#cpumask=555555
-
-#P_dataplane=kernel
-P_dataplane=dpdk
-#P_dataplane=none
-#V_dataplane=kernel
-#V_dataplane=dpdk
-V_dataplane=none
-
-dev1=p2p1
-dev2=p2p2
-#dev1=em2
-#dev2=em2
 
 
 echo $P_dataplane
 echo $V_dataplane
-
+exit 1
 
 FOUND=`grep "$dev1" /proc/net/dev`
 
 #if  [ -n "$FOUND"  ] ; then
-	#echo "$dev1 exists"
+    #echo "$dev1 exists"
 #else
-	#echo "$dev1 does not exist"
-	#exit
+    #echo "$dev1 does not exist"
+    #exit
 #fi
 
 FOUND=`grep "$dev2" /proc/net/dev`
 
 # if  [ -n "$FOUND"  ] ; then
-	# echo "$dev2 exists"
+    # echo "$dev2 exists"
 # else
-	# echo "$dev2 does not exist"
-	# exit
+    # echo "$dev2 does not exist"
+    # exit
 # fi
 
 
 : <<'BILL_COMMENT0'
 if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
-	echo "Binding devices $dev1 and $dev2 to vfio-pci/DPDK"
-	bus_info_dev1=`ethtool -i $dev1 | grep 'bus-info' | awk '{print $2}'`
-	bus_info_dev2=`ethtool -i $dev2 | grep 'bus-info' | awk '{print $2}'`
-	
-	echo $bus_info_dev1
-	echo $bus_info_dev2
-	
-	modprobe vfio
-	modprobe vfio_pci
-	
-	ifconfig $dev1 down
-	ifconfig $dev2 down
-	sleep 1
-	dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
-	sleep 1
-	dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
-	sleep 1
-	dpdk_nic_bind.py --status
+    echo "Binding devices $dev1 and $dev2 to vfio-pci/DPDK"
+    bus_info_dev1=`ethtool -i $dev1 | grep 'bus-info' | awk '{print $2}'`
+    bus_info_dev2=`ethtool -i $dev2 | grep 'bus-info' | awk '{print $2}'`
+    
+    echo $bus_info_dev1
+    echo $bus_info_dev2
+    
+    modprobe vfio
+    modprobe vfio_pci
+    
+    ifconfig $dev1 down
+    ifconfig $dev2 down
+    sleep 1
+    dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
+    sleep 1
+    dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
+    sleep 1
+    dpdk_nic_bind.py --status
 fi
 BILL_COMMENT0
 
@@ -230,11 +200,11 @@ modprobe -r openvswitch
 #LIBVIRTD_STATUS=`service libvirtd status | grep Active | awk '{print $3}'`
 
 #if [ "\(running\)" != $LIBVIRTD_STATUS ]; then
-	#echo "LIBVIRTD_STATUS = $LIBVIRTD_STATUS"
-	#echo "Starting libvirtd service..."
-	#systemctl start libvirtd
+    #echo "LIBVIRTD_STATUS = $LIBVIRTD_STATUS"
+    #echo "Starting libvirtd service..."
+    #systemctl start libvirtd
 #else
-	#echo "libvirtd service already running..."
+    #echo "libvirtd service already running..."
 #fi
 #exit 1;
 
@@ -244,307 +214,290 @@ echo "Configuring test network topology..."
 #
 case $network_topology in
 "{(PP)}")
-	if [[ "kernel" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
-		message="{(PP)}: P_dataplane=kernel, V_dataplane=kernel"
-		
-		#
-		# start new ovs
-		#
-		modprobe openvswitch
-		mkdir -p $prefix/var/run/openvswitch
-		mkdir -p $prefix/etc/openvswitch
-		$prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-		
-		rm -rf /dev/usvhost-1
-		$prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
-		    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-		    --pidfile --detach || exit 1
-		
-		
-		$prefix/bin/ovs-vsctl --no-wait init
-		$prefix/sbin/ovs-vswitchd --pidfile --detach
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		$prefix/bin/ovs-vsctl add-br ovsbr0
-		$prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
-		$prefix/bin/ovs-vsctl add-port ovsbr0 $dev2
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-	elif [[ "dpdk" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
+    if [[ "kernel" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
+        echo "**********************************************************"
+        echo "* Running {(P,P)} Test.  Bare metal"
+        echo "* 'P' data plane is the kernel.  'V' data plane is none."
+        echo "**********************************************************"
 
-		# start new ovs
-		mkdir -p $prefix/var/run/openvswitch
-		mkdir -p $prefix/etc/openvswitch
-		$prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-		
-		rm -rf /dev/usvhost-1
-		$prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
-		    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-		    --pidfile --detach || exit 1
+        message="{(PP)}: P_dataplane=kernel, V_dataplane=none"
+
+        systemctl stop irqbalance
+        #
+        # start new ovs
+        #
+        modprobe openvswitch
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
 
 
-		$prefix/sbin/ovs-vswitchd \
-			--dpdk $cuse_dev_opt -c 0x1 \
-			--socket-mem 1024,1024 \
-			-- unix:$DB_SOCK \
-			--pidfile \
-			--log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
+        $prefix/bin/ovs-vsctl --no-wait init
+        $prefix/sbin/ovs-vswitchd --pidfile --detach
 
-: << 'TEST_OVS'
-		screen -dmS ovs \
-		sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
-					--dpdk $cuse_dev_opt -c 0x1 -n 3 \
-					--socket-mem 1024,1024 \
-					-- unix:$DB_SOCK \
-					--pidfile \
-					--log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
-TEST_OVS
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        $prefix/bin/ovs-vsctl add-br ovsbr0
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev2
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+    elif [[ "dpdk" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
 
+        systemctl stop irqbalance
 
+        # start new ovs
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
 
-		$prefix/bin/ovs-vsctl --no-wait init
-		
-		echo "creating bridges"
-		message="{(PP)}: P_dataplane=dpdk, V_dataplane=none"
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		echo "creating ovsbr0 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
-		$prefix/bin/ovs-vsctl add-port ovsbr0 dpdk1 -- set Interface dpdk1 type=dpdk
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
 
-		$prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-#		$prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-#		$prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=1
-		
-: << 'Multi-Q'
-		
-		cpumask=""
-		for i in `seq 1 $num_queues_per_port`; do
-		    cpumask="55$cpumask"
-		done
-		ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-		ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-Multi-Q
-	else
-		message="You big dummy"
-	fi
-	;;
+        $prefix/sbin/ovs-vswitchd \
+            --dpdk $cuse_dev_opt -c 0x1 \
+            --socket-mem 1024,1024 \
+            -- unix:$DB_SOCK \
+            --pidfile \
+            --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
+
+        $prefix/bin/ovs-vsctl --no-wait init
+        
+        echo "creating bridges"
+        message="{(PP)}: P_dataplane=dpdk, V_dataplane=none"
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        echo "creating ovsbr0 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
+        $prefix/bin/ovs-vsctl add-port ovsbr0 dpdk1 -- set Interface dpdk1 type=dpdk
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+
+        $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+#        $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+#        $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+
+    else
+        message="You big dummy"
+    fi
+    ;;
 "{(PV),(VP)}")
-	if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
-		message="{(PV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
-		
-		#
-		# start new ovs
-		#
-		modprobe openvswitch
-		mkdir -p $prefix/var/run/openvswitch
-		mkdir -p $prefix/etc/openvswitch
-		$prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-		
-		rm -rf /dev/usvhost-1
-		$prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
-		    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-		    --pidfile --detach || exit 1
-	
-		$prefix/bin/ovs-vsctl --no-wait init
-		$prefix/sbin/ovs-vswitchd --pidfile --detach
-		
-		# create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		$prefix/bin/ovs-vsctl add-br ovsbr0
-		$prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
-		#$prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
-		$prefix/bin/ovs-vsctl add-br ovsbr1
-		$prefix/bin/ovs-vsctl add-port ovsbr1 $dev2
-		#$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2
-		$prefix/bin/ovs-ofctl del-flows ovsbr1
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-	else
+    if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
+        message="{(PV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
 
-		mkdir -p $prefix/var/run/openvswitch
-		mkdir -p $prefix/etc/openvswitch
-		$prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-		
-		rm -rf /dev/usvhost-1
-		$prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
-		    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-		    --pidfile --detach || exit 1
+        systemctl stop irqbalance
 
-		
-		screen -dmS ovs \
-		sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
-					--dpdk $cuse_dev_opt -c 0x1 -n 3 \
-					--socket-mem 1024,1024 \
-					-- unix:$DB_SOCK \
-					--pidfile \
-					--log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
+        #
+        # start new ovs
+        #
+        modprobe openvswitch
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
 
-		$prefix/bin/ovs-vsctl --no-wait init
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
+
+        $prefix/bin/ovs-vsctl --no-wait init
+        $prefix/sbin/ovs-vswitchd --pidfile --detach
+
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        $prefix/bin/ovs-vsctl add-br ovsbr0
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
+        #$prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
+        $prefix/bin/ovs-vsctl add-br ovsbr1
+        $prefix/bin/ovs-vsctl add-port ovsbr1 $dev2
+        #$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2
+        $prefix/bin/ovs-ofctl del-flows ovsbr1
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+    else
+        systemctl stop irqbalance
+
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
 
 
-		echo "creating bridges"
-		message="{(PV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
+        screen -dmS ovs \
+        sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
+                    --dpdk $cuse_dev_opt -c 0x1 -n 3 \
+                    --socket-mem 1024,1024 \
+                    -- unix:$DB_SOCK \
+                    --pidfile \
+                    --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
 
-		# create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		echo "creating ovsbr0 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
-		$prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1 -- set Interface vhost-user1 type=dpdkvhostuser
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
-		echo "creating ovsbr1 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr1 -- set bridge ovsbr1 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2 -- set Interface vhost-user2 type=dpdkvhostuser
-		$prefix/bin/ovs-vsctl add-port ovsbr1 dpdk1 -- set Interface dpdk1 type=dpdk
-		$prefix/bin/ovs-ofctl del-flows ovsbr1
-		$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
-		$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+        $prefix/bin/ovs-vsctl --no-wait init
 
-		ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-		ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
+
+        echo "creating bridges"
+        message="{(PV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
+
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        echo "creating ovsbr0 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
+        $prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1 -- set Interface vhost-user1 type=dpdkvhostuser
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
+        echo "creating ovsbr1 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr1 -- set bridge ovsbr1 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2 -- set Interface vhost-user2 type=dpdkvhostuser
+        $prefix/bin/ovs-vsctl add-port ovsbr1 dpdk1 -- set Interface dpdk1 type=dpdk
+        $prefix/bin/ovs-ofctl del-flows ovsbr1
+        $prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
+        $prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+
+        ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+        ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
 
 : <<'BILL_COMMENT'
-		cpumask=""
-		for i in `seq 1 $num_queues_per_port`; do
-		    cpumask="55$cpumask"
-		done
-		ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-		ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
-		ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
+        cpumask=""
+        for i in `seq 1 $num_queues_per_port`; do
+            cpumask="55$cpumask"
+        done
+        ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+        ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
+        ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
 BILL_COMMENT
-	fi
-	;;
+    fi
+    ;;
 "{(PV),(VV),(VP)}")
-	# start new ovs
-	mkdir -p $prefix/var/run/openvswitch
-	mkdir -p $prefix/etc/openvswitch
-	$prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-	
-	rm -rf /dev/usvhost-1
-	$prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
-	    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-	    --pidfile --detach || exit 1
-	
+    systemctl stop irqbalance
+    # start new ovs
+    mkdir -p $prefix/var/run/openvswitch
+    mkdir -p $prefix/etc/openvswitch
+    $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+    
+    rm -rf /dev/usvhost-1
+    $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --pidfile --detach || exit 1
+    
 
-	if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
-		message="{(PV),(VV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
-		
-		#
-		# start new ovs
-		#
-		modprobe openvswitch
-		
-		$prefix/bin/ovs-vsctl --no-wait init
-		$prefix/sbin/ovs-vswitchd --pidfile --detach
-		
-		# create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		$prefix/bin/ovs-vsctl add-br ovsbr0
-		$prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
-		$prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
-		$prefix/bin/ovs-vsctl add-br ovsbr1
-		#$prefix/bin/ovs-vsctl add-port ovsbr1 $dev2
-		$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2
-		$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user3
-		$prefix/bin/ovs-ofctl del-flows ovsbr1
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		
-		
-		# create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr2
-		$prefix/bin/ovs-vsctl add-br ovsbr2
-		$prefix/bin/ovs-vsctl add-port ovsbr2 $dev2
-		$prefix/bin/ovs-vsctl add-port ovsbr2 vhost-user4
-		$prefix/bin/ovs-ofctl del-flows ovsbr2
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-	elif [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+    if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
+        message="{(PV),(VV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
+        
+        #
+        # start new ovs
+        #
+        modprobe openvswitch
+        
+        $prefix/bin/ovs-vsctl --no-wait init
+        $prefix/sbin/ovs-vswitchd --pidfile --detach
+        
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        $prefix/bin/ovs-vsctl add-br ovsbr0
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
+        $prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
+        $prefix/bin/ovs-vsctl add-br ovsbr1
+        #$prefix/bin/ovs-vsctl add-port ovsbr1 $dev2
+        $prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2
+        $prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user3
+        $prefix/bin/ovs-ofctl del-flows ovsbr1
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        
+        
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr2
+        $prefix/bin/ovs-vsctl add-br ovsbr2
+        $prefix/bin/ovs-vsctl add-port ovsbr2 $dev2
+        $prefix/bin/ovs-vsctl add-port ovsbr2 vhost-user4
+        $prefix/bin/ovs-ofctl del-flows ovsbr2
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+    elif [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+        systemctl stop irqbalance
 
-		
-		screen -dmS ovs \
-		sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
-					--dpdk $cuse_dev_opt -c 0x1 -n 3 \
-					--socket-mem 1024,1024 \
-					-- unix:$DB_SOCK \
-					--pidfile \
-					--log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
+        screen -dmS ovs \
+        sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
+                    --dpdk $cuse_dev_opt -c 0x1 -n 3 \
+                    --socket-mem 1024,1024 \
+                    -- unix:$DB_SOCK \
+                    --pidfile \
+                    --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
 
-		$prefix/bin/ovs-vsctl --no-wait init
-		
-		echo "creating bridges"
-		message="{(PV),(VV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
-		# create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
-		echo "creating ovsbr0 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
-		$prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1 -- set Interface vhost-user1 type=dpdkvhostuser
-		$prefix/bin/ovs-ofctl del-flows ovsbr0
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
-		echo "creating ovsbr1 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr1 -- set bridge ovsbr1 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2 -- set Interface vhost-user2 type=dpdkvhostuser
-		$prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user3 -- set Interface vhost-user3 type=dpdkvhostuser
-		$prefix/bin/ovs-ofctl del-flows ovsbr1
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-		
-		$prefix/bin/ovs-vsctl --if-exists del-br ovsbr2
-		echo "creating ovsbr2 bridge"
-		$prefix/bin/ovs-vsctl add-br ovsbr2 -- set bridge ovsbr2 datapath_type=netdev
-		$prefix/bin/ovs-vsctl add-port ovsbr2 dpdk1 -- set Interface dpdk1 type=dpdk
-		$prefix/bin/ovs-vsctl add-port ovsbr2 vhost-user4 -- set Interface vhost-user4 type=dpdkvhostuser
-		$prefix/bin/ovs-ofctl del-flows ovsbr2
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
-		#$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-	else
-		message="{(PV),(VV),(VP)}"
-	fi
-	;;
+        $prefix/bin/ovs-vsctl --no-wait init
+        
+        echo "creating bridges"
+        message="{(PV),(VV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        echo "creating ovsbr0 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr0 dpdk0 -- set Interface dpdk0 type=dpdk
+        $prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1 -- set Interface vhost-user1 type=dpdkvhostuser
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr1
+        echo "creating ovsbr1 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr1 -- set bridge ovsbr1 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user2 -- set Interface vhost-user2 type=dpdkvhostuser
+        $prefix/bin/ovs-vsctl add-port ovsbr1 vhost-user3 -- set Interface vhost-user3 type=dpdkvhostuser
+        $prefix/bin/ovs-ofctl del-flows ovsbr1
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr2
+        echo "creating ovsbr2 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr2 -- set bridge ovsbr2 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr2 dpdk1 -- set Interface dpdk1 type=dpdk
+        $prefix/bin/ovs-vsctl add-port ovsbr2 vhost-user4 -- set Interface vhost-user4 type=dpdkvhostuser
+        $prefix/bin/ovs-ofctl del-flows ovsbr2
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
+    else
+        message="{(PV),(VV),(VP)}"
+    fi
+    ;;
 *)
-	message="A total loser"
-	;;
+    message="A total loser"
+    ;;
 esac
 
 echo $message
 
 exit
-
-
-
-
-
-
