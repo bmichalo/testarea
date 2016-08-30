@@ -1,142 +1,23 @@
 #!/bin/bash
 
 #
-# Current OVS packet throughput testing comes in several different forms.  Test descriptions will include the 
-# following nomenclature:
-#
-# Example 1:
-#   {(PP)} ............. Bridge 1:  (port1 = 10Gbps, port2 = 10Gbps)
-#
-# Example 2:
-#   {(PV),(VP)} ........ Bridge 1:  (port1 = 10Gb, port2 = virtio)
-#                        Bridge 2:  (port3 = virtio, port4 = 10Gbps)
-#
-# Example 3:
-#   {(PV),(VV)(VP)} .... Bridge1:  (port1 = 10Gbps, port2 = virtio)
-#                        Bridge2:  (port3 = virtio, port4 = virtio)
-#                        Bridge3:  (port5 = virtio, port6 = 10Gbps)
-#
-#
-# Test Cases:
-#
-# I.    {(PP)} - Bridge 1:  (port1 = 10Gbps, port2 = 10Gbps)
-#
-#       P_dataplane = kernel
-#       V_dataplane = N/A
-#
-#       UNIDIRECTIONAL PACKET PATH:
-#           1.  Packets input physical device A and RX into OVS
-#           2.  Packets forwarded via host machine virtual switch 'OVS + Linux kernel' bridging physical interfaces A and B
-#           3.  Packets TX from OVS and out physical device B
-#
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 3, 2, 1)
-#
-#
-# II.   {(PP)} - Bridge 1:  (port1 = 10Gbps, port2 = 10Gbps)
-#
-#       P_dataplane = dpdk
-#       V_dataplane = N/A
-#
-#       UNIDIRECTIONAL PACKET PATH:
-#           1.  Packets input physical device A and RX into OVS
-#           2.  Packets forwarded via host machine virtual switch 'OVS + dpdk' bridging physical interfaces A and B
-#           3.  Packets TX from OVS and out physical device B
-#
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 3, 2, 1)
-#
-#
-# III.  {(PV),(VP)} - Bridge 1:  (port1 = 10Gbps, port2 = virtio)
-#                     Bridge 2:  (port3 = virtio, port4 = 10Gbps)
-#
-#       P_dataplane = kernel
-#       V_dataplane = kernel
-#
-#       UNIDIRECTIONAL PACKET PATH:
-#           1.  Packets input physical device A and RX into OVS
-#           2.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           3.  Packets in virtual machine vm1 will be bridged amongst two virtual interfaces
-#           4.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           5.  Packets TX from OVS and out physical device B
-#
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 5 through 1)
-#
-#
-# IV.   {(PV),(VP)} - Bridge 1:  (port1 = 10Gbps, port2 = virtio)
-#                     Bridge 2:  (port3 = virtio, port4 = 10Gbps)
-#
-#       P_dataplane = dpdk
-#       V_dataplane = dpdk
-#
-#       UNIDIRECTIONAL PACKET PATH:
-#           1.  Packets input physical device A and RX into OVS
-#           2.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           3.  Packets in virtual machine vm1 will be bridged amongst two virtual interfaces
-#           4.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           5.  Packets TX from OVS and out physical device B
-#
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 5 through 1)
 #
 #
 #
-# V.   {(PV),(VV),(VP)} - Bridge 1:  (port1 = 10Gbps, port2 = virtio) 
-#                         Bridge 2:  (port3 = virtio, port4 = virtio) 
-#                         Bridge 3:  (port5 = virtio, port6 = 10Gbps)
-#
-#       P_dataplane = kernel
-#       V_dataplane = kernel
-#
-#       UNIDIRECTIONAL PACKET PATH:
-#
-#       PACKET PATH:
-#           1.  Packets in physical device A
-#           2.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           3.  Packets in virtual machine vm1 will be bridged amongst two virtual interfaces
-#           4.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           5.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           6.  Packets in virtual machine vm2 will be bridged amongst two virtual interfaces
-#           7.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           8.  Packets TX from OVS and out physical device B
-#
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 8 through 1)
 #
 #
-# VI.  {(PV),(VP),(PV),(VP)} -Bridge 1:  (port1 = 10Gbps, port2 = virtio) 
-#                             Bridge 2:  (port3 = virtio, port4 = 10Gbps) 
-#                             Bridge 3:  (port5 = 10Gbps, port6 = virtio)
-#                             Bridge 4:  (port7 = virtio, port8 = 10Gbps)
 #
-#       P_dataplane = dpdk
-#       V_dataplane = dpdk
 #
-#       UNIDIRECTIONAL PACKET PATH:
 #
-#       PACKET PATH:
-#           1.  Packets in physical device A
-#           2.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           3.  Packets in virtual machine vm1 will be bridged amongst two virtual interfaces
-#           4.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           5.  Packets forwarded via host machine virtual switch 'OVS + kernel' bridging one physical interface and one virtual interface
-#           6.  Packets in virtual machine vm2 will be bridged amongst two virtual interfaces
-#           7.  Packets TX to host machine virtual switch 'OVS + kernel' bridging one virtual interface and one physical interface
-#           8.  Packets TX from OVS and out physical device B
 #
-#       Note:  BIDIRECTIONAL packet path includes the above and additionally packets traversed into physical device B,
-#              through the DUT, and out device A (steps 8 through 1)
-#
-
 # Read the test configuration parameters
+#
 source test_params.cfg
 
 
 
 echo $P_dataplane
 echo $V_dataplane
-exit 1
 
 FOUND=`grep "$dev1" /proc/net/dev`
 
