@@ -14,7 +14,25 @@
 #
 source test_params.cfg
 
-
+#
+# If using character driver messaging mechanism, need to load eventfd_link 
+# kernel module.  This module is not a Linux standard module which is 
+# necessary for the user space vhost current implementation (CUSE-based)
+# to communicate to the guest
+#
+if [ $vhost = "cuse" ]; then
+	if lsmod | grep -q eventfd_link; then
+		echo "not loading eventfd_link (already loaded)"
+	else
+		# if insmod $DPDK_DIR/lib/librte_vhost/eventfd_link/eventfd_link.ko; then
+		if insmod /lib/modules/`uname -r`/extra/eventfd_link.ko; then
+			echo "loaded eventfd_link module"
+		else
+			echo "Failed to load eventfd_link module, exiting"
+			exit 1
+		fi
+	fi
+fi
 
 echo $P_dataplane
 echo $V_dataplane
