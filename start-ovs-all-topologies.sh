@@ -1,11 +1,4 @@
 #!/bin/bash
-
-#
-#
-#
-#
-#
-#
 #
 #
 #
@@ -22,11 +15,11 @@ source test_params.cfg
 #
 if [ $vhost = "cuse" ]; then
 	if lsmod | grep -q eventfd_link; then
-		echo "not loading eventfd_link (already loaded)"
+		echo "Not loading eventfd_link (already loaded)"
 	else
 		# if insmod $DPDK_DIR/lib/librte_vhost/eventfd_link/eventfd_link.ko; then
 		if insmod /lib/modules/`uname -r`/extra/eventfd_link.ko; then
-			echo "loaded eventfd_link module"
+			echo "Loaded eventfd_link module"
 		else
 			echo "Failed to load eventfd_link module, exiting"
 			exit 1
@@ -39,49 +32,27 @@ echo $V_dataplane
 
 FOUND=`grep "$dev1" /proc/net/dev`
 
-#if  [ -n "$FOUND"  ] ; then
-    #echo "$dev1 exists"
-#else
-    #echo "$dev1 does not exist"
-    #exit
-#fi
+if  [ -n "$FOUND"  ] ; then
+    echo "$dev1 exists"
+else
+    echo "$dev1 does not exist"
+    exit
+fi
 
 FOUND=`grep "$dev2" /proc/net/dev`
 
-# if  [ -n "$FOUND"  ] ; then
-    # echo "$dev2 exists"
-# else
-    # echo "$dev2 does not exist"
-    # exit
-# fi
-
-
-: <<'BILL_COMMENT0'
-if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
-    echo "Binding devices $dev1 and $dev2 to vfio-pci/DPDK"
-    bus_info_dev1=`ethtool -i $dev1 | grep 'bus-info' | awk '{print $2}'`
-    bus_info_dev2=`ethtool -i $dev2 | grep 'bus-info' | awk '{print $2}'`
-    
-    echo $bus_info_dev1
-    echo $bus_info_dev2
-    
-    modprobe vfio
-    modprobe vfio_pci
-    
-    ifconfig $dev1 down
-    ifconfig $dev2 down
-    sleep 1
-    dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
-    sleep 1
-    dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
-    sleep 1
-    dpdk_nic_bind.py --status
+if  [ -n "$FOUND"  ] ; then
+    echo "$dev2 exists"
+else
+    echo "$dev2 does not exist"
+    exit
 fi
-BILL_COMMENT0
+
 
 #
 # Completely remove old OVS configuration
 #
+echo "Removing preexiting OVS configuration, processes, and logs..."
 killall ovs-vswitchd
 killall ovsdb-server
 killall ovsdb-server ovs-vswitchd
@@ -93,19 +64,19 @@ rm -rf $prefix/etc/openvswitch/*db*
 rm -rf $prefix/var/log/openvswitch/*
 modprobe -r openvswitch
 
-
-#echo "Starting libvirtd service..."
-
-#LIBVIRTD_STATUS=`service libvirtd status | grep Active | awk '{print $3}'`
-
-#if [ "\(running\)" != $LIBVIRTD_STATUS ]; then
-    #echo "LIBVIRTD_STATUS = $LIBVIRTD_STATUS"
-    #echo "Starting libvirtd service..."
-    #systemctl start libvirtd
-#else
-    #echo "libvirtd service already running..."
-#fi
-#exit 1;
+if [[ "{\(PP\)}" != $network_topology ]]; then
+    echo "Starting libvirtd service..."
+    
+    LIBVIRTD_STATUS=`systemctl status libvirtd | grep Active | awk '{print $3}'`
+    
+    if [ "\(running\)" != $LIBVIRTD_STATUS ]; then
+        echo "LIBVIRTD_STATUS = $LIBVIRTD_STATUS"
+        echo "Starting libvirtd service..."
+        systemctl start libvirtd
+    else
+        echo "libvirtd service already running..."
+    fi
+fi
 
 echo "Configuring test network topology..."
 #
@@ -134,7 +105,6 @@ case $network_topology in
         $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
             --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
             --pidfile --detach || exit 1
-
 
         $prefix/bin/ovs-vsctl --no-wait init
         $prefix/sbin/ovs-vswitchd --pidfile --detach
@@ -182,10 +152,9 @@ case $network_topology in
         $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
 
         $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-#        $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-#        $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
         ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
-
+        #$prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+        #$prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
     else
         message="You big dummy"
     fi
@@ -240,7 +209,6 @@ case $network_topology in
             --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
             --pidfile --detach || exit 1
 
-
         screen -dmS ovs \
         sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
                     --dpdk $cuse_dev_opt -c 0x1 -n 3 \
@@ -275,22 +243,11 @@ case $network_topology in
         $prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
 
         ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-        ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
-
-: <<'BILL_COMMENT'
-        cpumask=""
-        for i in `seq 1 $num_queues_per_port`; do
-            cpumask="55$cpumask"
-        done
-        ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-        ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
-        ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
-BILL_COMMENT
+        ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+        # ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+        # ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        # ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
+        # ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
     fi
     ;;
 "{(PV),(VV),(VP)}")
@@ -334,8 +291,6 @@ BILL_COMMENT
         $prefix/bin/ovs-ofctl del-flows ovsbr1
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-        
-        
         
         # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
         $prefix/bin/ovs-vsctl --if-exists del-br ovsbr2
