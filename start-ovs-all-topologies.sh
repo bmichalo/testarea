@@ -30,24 +30,49 @@ fi
 echo $P_dataplane
 echo $V_dataplane
 
-FOUND=`grep "$dev1" /proc/net/dev`
 
-if  [ -n "$FOUND"  ] ; then
-    echo "$dev1 exists"
-else
-    echo "$dev1 does not exist"
-    exit
+DPDK_BOUND_TO_IFACES=`$dpdk_tools_path/dpdk_nic_bind.py --status | grep -A 2 "Network devices using DPDK-compatible driver" | grep none`
+
+if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+    if [[ "\<none\>" != $DPDK_BOUND_TO_IFACES ]]; then
+        FOUND=`grep "$dev1" /proc/net/dev`
+        
+        if  [ -n "$FOUND"  ] ; then
+            echo "$dev1 exists"
+        else
+            echo "$dev1 does not exist"
+            exit
+        fi
+        
+        FOUND=`grep "$dev2" /proc/net/dev`
+        
+        if  [ -n "$FOUND"  ] ; then
+            echo "$dev2 exists"
+        else
+            echo "$dev2 does not exist"
+            exit
+        fi
+        
+    	echo "Binding devices $dev1 and $dev2 to vfio-pci/DPDK"
+    	bus_info_dev1=`ethtool -i $dev1 | grep 'bus-info' | awk '{print $2}'`
+    	bus_info_dev2=`ethtool -i $dev2 | grep 'bus-info' | awk '{print $2}'`
+    	
+    	echo $bus_info_dev1
+    	echo $bus_info_dev2
+    	
+    	modprobe vfio
+    	modprobe vfio_pci
+    	
+    	ifconfig $dev1 down
+    	ifconfig $dev2 down
+    	sleep 1
+    	dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
+    	sleep 1
+    	dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
+    	sleep 1
+    	dpdk_nic_bind.py --status
+    fi
 fi
-
-FOUND=`grep "$dev2" /proc/net/dev`
-
-if  [ -n "$FOUND"  ] ; then
-    echo "$dev2 exists"
-else
-    echo "$dev2 does not exist"
-    exit
-fi
-
 
 #
 # Completely remove old OVS configuration
@@ -65,7 +90,6 @@ rm -rf $prefix/var/log/openvswitch/*
 modprobe -r openvswitch
 
 if [[ "{\(PP\)}" != $network_topology ]]; then
-    echo "Starting libvirtd service..."
     
     LIBVIRTD_STATUS=`systemctl status libvirtd | grep Active | awk '{print $3}'`
     
