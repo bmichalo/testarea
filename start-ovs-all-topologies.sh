@@ -102,6 +102,8 @@ if [[ "{\(PP\)}" != $network_topology ]]; then
     fi
 fi
 
+systemctl stop irqbalance
+
 echo "Configuring test network topology..."
 #
 # Process and execute test
@@ -116,7 +118,6 @@ case $network_topology in
 
         message="{(PP)}: P_dataplane=kernel, V_dataplane=none"
 
-        systemctl stop irqbalance
         #
         # start new ovs
         #
@@ -142,8 +143,6 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
         
     elif [[ "dpdk" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
-
-        systemctl stop irqbalance
 
         # start new ovs
         mkdir -p $prefix/var/run/openvswitch
@@ -187,8 +186,6 @@ case $network_topology in
     if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
         message="{(PV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
 
-        systemctl stop irqbalance
-
         #
         # start new ovs
         #
@@ -222,7 +219,6 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
     else
-        systemctl stop irqbalance
 
         mkdir -p $prefix/var/run/openvswitch
         mkdir -p $prefix/etc/openvswitch
@@ -275,7 +271,6 @@ case $network_topology in
     fi
     ;;
 "{(PV),(VV),(VP)}")
-    systemctl stop irqbalance
     # start new ovs
     mkdir -p $prefix/var/run/openvswitch
     mkdir -p $prefix/etc/openvswitch
@@ -326,7 +321,6 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
         
     elif [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
-        systemctl stop irqbalance
 
         screen -dmS ovs \
         sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
