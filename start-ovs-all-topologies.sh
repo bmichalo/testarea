@@ -256,8 +256,8 @@ case $network_topology in
 
         $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
         $prefix/bin/ovs-vsctl add-br ovsbr0
-        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
-        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev2
+        #$prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
+        #$prefix/bin/ovs-vsctl add-port ovsbr0 $dev2
         $prefix/bin/ovs-ofctl del-flows ovsbr0
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
