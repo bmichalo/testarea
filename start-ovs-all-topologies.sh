@@ -31,9 +31,9 @@ echo $P_dataplane
 echo $V_dataplane
 
 
-DPDK_BOUND_TO_IFACES=`$dpdk_tools_path/dpdk_nic_bind.py --status | grep -A 2 "Network devices using DPDK-compatible driver" | grep none`
+DPDK_BOUND_TO_IFACES=`$dpdk_tools_path/dpdk-devbind.py --status | grep -A 2 "Network devices using DPDK-compatible driver" | grep none`
 
-if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]] && [[ "1" == $bind_ifs ]]; then
     if [[ "\<none\>" != $DPDK_BOUND_TO_IFACES ]]; then
         FOUND=`grep "$dev1" /proc/net/dev`
         
@@ -66,11 +66,11 @@ if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
     	ifconfig $dev1 down
     	ifconfig $dev2 down
     	sleep 1
-    	dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
+    	dpdk-devbind.py -u $bus_info_dev1 $bus_info_dev2
     	sleep 1
-    	dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
+    	dpdk-devbind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
     	sleep 1
-    	dpdk_nic_bind.py --status
+    	dpdk-devbind.py --status
     fi
 fi
 
@@ -113,10 +113,9 @@ case $network_topology in
     if [[ "kernel" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
         echo "**********************************************************"
         echo "* Running {(P,P)} Test.  Bare metal"
-        echo "* 'P' data plane is the kernel.  'V' data plane is none."
+        echo "* Physical Data Plane .... kernel"
+        echo "* Virtual Data Plane ..... none"
         echo "**********************************************************"
-
-        message="{(PP)}: P_dataplane=kernel, V_dataplane=none"
 
         #
         # start new ovs
@@ -143,6 +142,11 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
         
     elif [[ "dpdk" == $P_dataplane ]] && [[ "none" == $V_dataplane ]]; then
+        echo "**********************************************************"
+        echo "* Running {(P,P)} Test.  Bare metal"
+        echo "* Physical Data Plane .... DPDK"
+        echo "* Virtual Data Plane ..... none"
+        echo "**********************************************************"
 
         # start new ovs
         mkdir -p $prefix/var/run/openvswitch
@@ -164,7 +168,6 @@ case $network_topology in
         $prefix/bin/ovs-vsctl --no-wait init
         
         echo "creating bridges"
-        message="{(PP)}: P_dataplane=dpdk, V_dataplane=none"
         $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
         echo "creating ovsbr0 bridge"
         $prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
@@ -179,12 +182,97 @@ case $network_topology in
         #$prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
         #$prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
     else
-        message="You big dummy"
+        echo "{(P,P)} fatal error.  Either P_dataplane or V_dataplane is not understood"
+    fi
+    ;;
+"{(VV)}")
+    if [[ "none" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+        echo "**********************************************************"
+        echo "* Running {(V,V)} Test."
+        echo "* Physical Data Plane .... none"
+        echo "* Virtual Data Plane ..... DPDK"
+        echo "**********************************************************"
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
+
+        screen -dmS ovs \
+        sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
+                    --dpdk $cuse_dev_opt -c 0x1 -n 3 \
+                    --socket-mem 1024,1024 \
+                    -- unix:$DB_SOCK \
+                    --pidfile \
+                    --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
+
+        $prefix/bin/ovs-vsctl --no-wait init
+
+
+        echo "creating bridge"
+
+        # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        echo "creating ovsbr0 bridge"
+        $prefix/bin/ovs-vsctl add-br ovsbr0 -- set bridge ovsbr0 datapath_type=netdev
+        $prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user1 -- set Interface vhost-user1 type=dpdkvhostuser
+        $prefix/bin/ovs-vsctl add-port ovsbr0 vhost-user2 -- set Interface vhost-user2 type=dpdkvhostuser
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+        
+        $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+        #$prefix/bin/ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+        # ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+        # ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        $prefix/bin/ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
+        $prefix/bin/ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
+
+    elif [[ "none" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
+        echo "**********************************************************"
+        echo "* Running {(V,V)} Test."
+        echo "* Physical Data Plane .... none"
+        echo "* Virtual Data Plane ..... kernel"
+        echo "**********************************************************"
+
+        #
+        # start new ovs
+        #
+        modprobe openvswitch
+        mkdir -p $prefix/var/run/openvswitch
+        mkdir -p $prefix/etc/openvswitch
+        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+
+        rm -rf /dev/usvhost-1
+        $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
+            --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+            --pidfile --detach || exit 1
+
+        $prefix/bin/ovs-vsctl --no-wait init
+        $prefix/sbin/ovs-vswitchd --pidfile --detach
+
+        $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
+        $prefix/bin/ovs-vsctl add-br ovsbr0
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev1
+        $prefix/bin/ovs-vsctl add-port ovsbr0 $dev2
+        $prefix/bin/ovs-ofctl del-flows ovsbr0
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
+        #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
+
+    else
+        echo "Bad attempt to create bridge with vhostuser interfaces"
     fi
     ;;
 "{(PV),(VP)}")
     if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
-        message="{(PV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
+        echo "**********************************************************"
+        echo "* Running {(P,P), (V,P)} Test."
+        echo "* Physical Data Plane .... kernel"
+        echo "* Virtual Data Plane ..... kernel"
+        echo "**********************************************************"
 
         #
         # start new ovs
@@ -219,6 +307,11 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
     else
+        echo "**********************************************************"
+        echo "* Running {(P,P), (V,P)} Test."
+        echo "* Physical Data Plane .... DPDK"
+        echo "* Virtual Data Plane ..... DPDK"
+        echo "**********************************************************"
 
         mkdir -p $prefix/var/run/openvswitch
         mkdir -p $prefix/etc/openvswitch
@@ -241,7 +334,6 @@ case $network_topology in
 
 
         echo "creating bridges"
-        message="{(PV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
 
         # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
         $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
@@ -270,7 +362,7 @@ case $network_topology in
         # ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
     fi
     ;;
-"{(PV),(VV),(VP)}")
+"{\(PV\),\(VV\),\(VP\)}")
     # start new ovs
     mkdir -p $prefix/var/run/openvswitch
     mkdir -p $prefix/etc/openvswitch
@@ -283,7 +375,11 @@ case $network_topology in
     
 
     if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
-        message="{(PV),(VV),(VP)}: P_dataplane=kernel, V_dataplane=kernel"
+        echo "**********************************************************"
+        echo "* Running {(P,V), (V,V), (V,P)} Test."
+        echo "* Physical Data Plane .... kernel"
+        echo "* Virtual Data Plane ..... kernel"
+        echo "**********************************************************"
         
         #
         # start new ovs
@@ -321,6 +417,11 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
         
     elif [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]]; then
+        echo "**********************************************************"
+        echo "* Running {(P,V), (V,V), (V,P)} Test."
+        echo "* Physical Data Plane .... DPDK"
+        echo "* Virtual Data Plane ..... DPDK"
+        echo "**********************************************************"
 
         screen -dmS ovs \
         sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
@@ -333,7 +434,6 @@ case $network_topology in
         $prefix/bin/ovs-vsctl --no-wait init
         
         echo "creating bridges"
-        message="{(PV),(VV),(VP)}: P_dataplane=dpdk, V_dataplane=dpdk"
         # create the bridges/ports with 1 phys dev and 1 virt dev per bridge, to be used for 1 VM to forward packets
         $prefix/bin/ovs-vsctl --if-exists del-br ovsbr0
         echo "creating ovsbr0 bridge"
@@ -361,15 +461,11 @@ case $network_topology in
         $prefix/bin/ovs-ofctl del-flows ovsbr2
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
-    else
-        message="{(PV),(VV),(VP)}"
     fi
     ;;
 *)
-    message="A total loser"
+    echo "A total loser"
     ;;
 esac
-
-echo $message
 
 exit
