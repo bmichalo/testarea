@@ -33,7 +33,7 @@ echo $V_dataplane
 
 DPDK_BOUND_TO_IFACES=`$dpdk_tools_path/dpdk-devbind.py --status | grep -A 2 "Network devices using DPDK-compatible driver" | grep none`
 
-if [[ "dpdk" == $P_dataplane ]] && [[ "dpdk" == $V_dataplane ]] && [[ "1" == $bind_ifs ]]; then
+if [[ "dpdk" == $P_dataplane ]] && [[ "1" == $bind_ifs ]]; then
     if [[ "\<none\>" != $DPDK_BOUND_TO_IFACES ]]; then
         FOUND=`grep "$dev1" /proc/net/dev`
         
@@ -269,7 +269,7 @@ case $network_topology in
 "{(PV),(VP)}")
     if [[ "kernel" == $P_dataplane ]] && [[ "kernel" == $V_dataplane ]]; then
         echo "**********************************************************"
-        echo "* Running {(P,P), (V,P)} Test."
+        echo "* Running {(P,V), (V,P)} Test."
         echo "* Physical Data Plane .... kernel"
         echo "* Virtual Data Plane ..... kernel"
         echo "**********************************************************"
@@ -308,7 +308,7 @@ case $network_topology in
         #$prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
     else
         echo "**********************************************************"
-        echo "* Running {(P,P), (V,P)} Test."
+        echo "* Running {(P,V), (V,P)} Test."
         echo "* Physical Data Plane .... DPDK"
         echo "* Virtual Data Plane ..... DPDK"
         echo "**********************************************************"

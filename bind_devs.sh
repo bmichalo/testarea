@@ -3,7 +3,7 @@
 
 #prefix="/usr/local" # used with locally built src
 #prefix=""  # used with RPMs
-prefix="/root/perf84/dpdk/tools"
+prefix="/root/perf84/dpdk1607/dpdk-16.07/tools"
 
 #dev1=em1
 #dev2=em2
@@ -24,8 +24,8 @@ modprobe vfio_pci
 ifconfig $dev1 down
 ifconfig $dev2 down
 sleep 1
-$prefix/dpdk_nic_bind.py -u $bus_info_dev1 $bus_info_dev2
+$prefix/dpdk-devbind.py -u $bus_info_dev1 $bus_info_dev2
 sleep 1
-$prefix/dpdk_nic_bind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
+$prefix/dpdk-devbind.py -b vfio-pci $bus_info_dev1 $bus_info_dev2
 sleep 1
-$prefix/dpdk_nic_bind.py --status
+$prefix/dpdk-devbind.py --status
