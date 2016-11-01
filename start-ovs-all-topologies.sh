@@ -98,6 +98,12 @@ rm -rf $prefix/etc/openvswitch/*db*
 rm -rf $prefix/var/log/openvswitch/*
 modprobe -r openvswitch
 
+#
+# OVS Identification
+#
+$prefix/bin/ovs-vsctl -V
+$prefix/bin/ovs-ofctl -V
+
 if [[ "{\(PP\)}" != $network_topology ]]; then
     
     LIBVIRTD_STATUS=`systemctl status libvirtd | grep Active | awk '{print $3}'`
@@ -132,7 +138,11 @@ case $network_topology in
         modprobe openvswitch
         mkdir -p $prefix/var/run/openvswitch
         mkdir -p $prefix/etc/openvswitch
-        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        else
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+        fi
 
         rm -rf /dev/usvhost-1
         $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
@@ -160,33 +170,41 @@ case $network_topology in
         # start new ovs
         mkdir -p $prefix/var/run/openvswitch
         mkdir -p $prefix/etc/openvswitch
-        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        else
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+        fi
 
         rm -rf /dev/usvhost-1
         $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
             --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
             --pidfile --detach || exit 1
-: <<'OVS1'
-        $prefix/sbin/ovs-vswitchd \
-            --dpdk $cuse_dev_opt -c 0x1 \
-            --socket-mem 1024,1024 \
-            -- unix:$DB_SOCK \
-            --pidfile \
-            --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
-OVS1
 
-        $prefix/bin/ovs-vsctl --no-wait init 
-        $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
-        $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="1024,1024"
         echo "Starting vswitchd"
-        $prefix/sbin/ovs-vswitchd \
-            -c 0x1 \
-            -- unix:$DB_SOCK \
-            --pidfile \
-            --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovs-vsctl --no-wait init 
+            $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+            $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="1024,1024"
+            $prefix/sbin/ovs-vswitchd \
+                -c 0x1 \
+                -- unix:$DB_SOCK \
+                --pidfile \
+                --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
+        
+            $prefix/sbin/ovs-vswitchd unix:$DB_SOCK --pidfile --detach
+        else
+            $prefix/sbin/ovs-vswitchd \
+                --dpdk $cuse_dev_opt -c 0x1 \
+                --socket-mem 1024,1024 \
+                -- unix:$DB_SOCK \
+                --pidfile \
+                --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt &
+        
+            $prefix/bin/ovs-vsctl --no-wait init 
+        fi
         echo "Started vswitchd ***************"
 
-        $prefix/sbin/ovs-vswitchd unix:$DB_SOCK --pidfile --detach
 
         
         echo "creating bridges"
@@ -199,10 +217,13 @@ OVS1
         $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=1,idle_timeout=0 actions=output:2"
         $prefix/bin/ovs-ofctl add-flow ovsbr0 "in_port=2,idle_timeout=0 actions=output:1"
 
-        #$prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-        #$prefix/bin/ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
-        $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-        $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+            $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        else
+            $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+            $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+        fi
     else
         echo "{(P,P)} fatal error.  Either P_dataplane or V_dataplane is not understood"
     fi
@@ -348,30 +369,37 @@ OVS1
         # start new ovs
         mkdir -p $prefix/var/run/openvswitch
         mkdir -p $prefix/etc/openvswitch
-        $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
+        else
+            $prefix/bin/ovsdb-tool create $prefix/etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+        fi
 
         rm -rf /dev/usvhost-1
         $prefix/sbin/ovsdb-server -v --remote=punix:$DB_SOCK \
             --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
             --pidfile --detach || exit 1
 
-        $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
-        $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="1024,1024"
-        echo "Starting vswitchd"
-: <<'TEST'
-        screen -dmS ovs \
-        sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
-            -- unix:$DB_SOCK \
-            --pidfile \
-            --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt"
-TEST
-        screen -dmS ovs \
-        sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
-            unix:$DB_SOCK \
-            --pidfile \
-            --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt"
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+            $prefix/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="1024,1024"
+            screen -dmS ovs \
+            sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
+                unix:$DB_SOCK \
+                --pidfile \
+                --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt"
 
-        $prefix/bin/ovs-vsctl --no-wait init 
+        else
+            screen -dmS ovs \
+            sudo su -g qemu -c "umask 002; $prefix/sbin/ovs-vswitchd \
+                        --dpdk $cuse_dev_opt -c 0x1 -n 3 \
+                        --socket-mem 1024,1024 \
+                        -- unix:$DB_SOCK \
+                        --pidfile \
+                        --log-file=$prefix/var/log/openvswitch/ovs-vswitchd.log 2>&1 >$prefix/var/log/openvswitch/ovs-launch.txt" 
+        fi
+        $prefix/bin/ovs-vsctl --no-wait init
+        echo "Starting vswitchd"
         echo "Started vswitchd ***************"
 
         echo "creating bridges"
@@ -395,13 +423,14 @@ TEST
         $prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=1,idle_timeout=0 actions=output:2"
         $prefix/bin/ovs-ofctl add-flow ovsbr1 "in_port=2,idle_timeout=0 actions=output:1"
 
-        $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
-        #ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
-
-        $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
-        $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
-        #ovs-vsctl set Interface vhost-user1 options:n_rxq=$num_queues_per_port
-        #ovs-vsctl set Interface vhost-user2 options:n_rxq=$num_queues_per_port
+        if [ $ovs_version == "2pt6" ]; then
+            $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+            $prefix/bin/ovs-vsctl set Interface dpdk0 options:n_rxq=$num_queues_per_port
+            $prefix/bin/ovs-vsctl set Interface dpdk1 options:n_rxq=$num_queues_per_port
+        else
+            $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+            $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+        fi
 
         if [[ $multi_instance == "2" ]]; then
             echo "Creating 2nd set of bridges"
@@ -425,8 +454,14 @@ TEST
             $prefix/bin/ovs-ofctl add-flow ovsbr3 "in_port=1,idle_timeout=0 actions=output:2"
             $prefix/bin/ovs-ofctl add-flow ovsbr3 "in_port=2,idle_timeout=0 actions=output:1"
 
-            $prefix/bin/ovs-vsctl set Interface dpdk2 options:n_rxq=$num_queues_per_port
-            $prefix/bin/ovs-vsctl set Interface dpdk3 options:n_rxq=$num_queues_per_port
+            if [ $ovs_version == "2pt6" ]; then
+                $prefix/bin/ovs-vsctl set Interface dpdk2 options:n_rxq=$num_queues_per_port
+                $prefix/bin/ovs-vsctl set Interface dpdk3 options:n_rxq=$num_queues_per_port
+            else
+                $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=$cpumask
+                $prefix/bin/ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs=$num_queues_per_port
+
+            fi
         fi
     fi
     ;;
